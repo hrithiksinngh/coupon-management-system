@@ -21,7 +21,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // CRUD APIs for Coupons
 
-// 1. Create a Coupon
+// Create a Coupon
 app.post('/api/coupons/createCoupon', async (req, res) => {
     const {
         code,
@@ -64,7 +64,7 @@ app.post('/api/coupons/createCoupon', async (req, res) => {
     }
 });
 
-// 2. Get All Coupons
+// Get All Coupons
 app.get('/api/coupons/getAllCoupons', async (req, res) => {
     try {
         const { data, error } = await supabase.from('coupons').select('*');
@@ -77,7 +77,7 @@ app.get('/api/coupons/getAllCoupons', async (req, res) => {
     }
 });
 
-// 3. Get a Single Coupon
+// Get a Single Coupon
 app.get('/api/coupons/getCouponById/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -92,7 +92,7 @@ app.get('/api/coupons/getCouponById/:id', async (req, res) => {
     }
 });
 
-// 4. Update a Coupon
+// Update a Coupon
 app.put('/api/coupons/update/:id', async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
@@ -111,7 +111,7 @@ app.put('/api/coupons/update/:id', async (req, res) => {
     }
 });
 
-// 5. Delete a Coupon
+// Delete a Coupon
 app.delete('/api/coupons/hard-delete/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -127,7 +127,7 @@ app.delete('/api/coupons/hard-delete/:id', async (req, res) => {
 });
 
 
-// 5. Soft Delete a Coupon
+// Soft Delete a Coupon
 app.delete('/api/coupons/soft-delete/:id', async (req, res) => {
     const { id } = req.params;
 
