@@ -19,10 +19,35 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Admin authentication middleware
+const authenticateAdmin = async (req, res, next) => {
+    const adminEmail = req.headers.emailid;
+
+    if (!adminEmail) {
+        return res.status(401).json({ message: 'Unauthorized access' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('admin')
+            .select('email')
+            .eq('email', adminEmail)
+            .single();
+
+        if (error || !data) {
+            return res.status(401).json({ message: 'Unauthorized: Admin not found' });
+        }
+
+        next();
+    } catch (error) {
+        return res.status(500).json({ message: 'Error checking admin authorization', error: error.message });
+    }
+};
+
 // CRUD APIs for Coupons
 
 // Create a Coupon
-app.post('/api/coupons/createCoupon', async (req, res) => {
+app.post('/admin/api/coupons/createCoupon', authenticateAdmin, async (req, res) => {
     const {
         code,
         offer_name,
@@ -65,7 +90,7 @@ app.post('/api/coupons/createCoupon', async (req, res) => {
 });
 
 // Get All Coupons
-app.get('/api/coupons/getAllCoupons', async (req, res) => {
+app.get('/admin/api/coupons/getAllCoupons', authenticateAdmin, async (req, res) => {
     try {
         const { data, error } = await supabase.from('coupons').select('*');
 
@@ -78,7 +103,7 @@ app.get('/api/coupons/getAllCoupons', async (req, res) => {
 });
 
 // Get a Single Coupon
-app.get('/api/coupons/getCouponById/:id', async (req, res) => {
+app.get('/admin/api/coupons/getCouponById/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -93,7 +118,7 @@ app.get('/api/coupons/getCouponById/:id', async (req, res) => {
 });
 
 // Update a Coupon
-app.put('/api/coupons/update/:id', async (req, res) => {
+app.put('/admin/api/coupons/update/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
@@ -112,7 +137,7 @@ app.put('/api/coupons/update/:id', async (req, res) => {
 });
 
 // Delete a Coupon
-app.delete('/api/coupons/hard-delete/:id', async (req, res) => {
+app.delete('/admin/api/coupons/hard-delete/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -128,7 +153,7 @@ app.delete('/api/coupons/hard-delete/:id', async (req, res) => {
 
 
 // Soft Delete a Coupon
-app.delete('/api/coupons/soft-delete/:id', async (req, res) => {
+app.delete('/admin/api/coupons/soft-delete/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
