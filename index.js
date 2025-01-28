@@ -161,9 +161,28 @@ app.get('/admin/api/coupons/getCouponById/:id', authenticateAdmin, async (req, r
 // Update a Coupon
 app.put('/admin/api/coupons/update/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
 
     try {
+        // Convert date timestamps to ISO string if they exist in updates
+        if (updates.start_date) {
+            updates.start_date = new Date(parseInt(updates.start_date)).toISOString();
+        }
+        if (updates.end_date) {
+            updates.end_date = new Date(parseInt(updates.end_date)).toISOString();
+        }
+
+        // Convert numeric fields if they exist
+        if (updates.discount_value) {
+            updates.discount_value = Number(updates.discount_value);
+        }
+        if (updates.max_usage) {
+            updates.max_usage = updates.max_usage === '' ? null : Number(updates.max_usage);
+        }
+        if (updates.max_usage_per_user) {
+            updates.max_usage_per_user = updates.max_usage_per_user === '' ? null : Number(updates.max_usage_per_user);
+        }
+
         const { data, error } = await supabase.from('coupons').update(updates).eq('id', id);
 
         if (error) throw error;
