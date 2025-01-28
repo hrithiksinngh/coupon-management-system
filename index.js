@@ -24,7 +24,11 @@ const authenticateAdmin = async (req, res, next) => {
     const adminEmail = req.headers.emailid;
 
     if (!adminEmail) {
-        return res.status(401).json({ message: 'Unauthorized access' });
+        return res.status(401).json({
+            statusCode: 401,
+            message: 'Access Denied',
+            error: 'Unauthorized'
+        });
     }
 
     try {
@@ -35,12 +39,20 @@ const authenticateAdmin = async (req, res, next) => {
             .single();
 
         if (error || !data) {
-            return res.status(401).json({ message: 'Unauthorized: Admin not found' });
+            return res.status(401).json({
+                statusCode: 401,
+                message: 'Access Denied',
+                error: 'Unauthorized'
+            });
         }
 
         next();
     } catch (error) {
-        return res.status(500).json({ message: 'Error checking admin authorization', error: error.message });
+        return res.status(500).json({
+            statusCode: 500,
+            message: 'Error checking admin authorization',
+            error: error.message
+        });
     }
 };
 
@@ -57,7 +69,8 @@ app.post('/admin/api/coupons/createCoupon', authenticateAdmin, async (req, res) 
         max_usage_per_user,
         start_date,
         end_date,
-        terms_url
+        terms_url,
+        coupon_description
     } = req.body;
 
     try {
@@ -72,20 +85,28 @@ app.post('/admin/api/coupons/createCoupon', authenticateAdmin, async (req, res) 
             // Convert milliseconds timestamp to proper date format
             start_date: new Date(parseInt(start_date)).toISOString(),
             end_date: new Date(parseInt(end_date)).toISOString(),
-            terms_url: terms_url
+            terms_url: terms_url,
+            coupon_description: coupon_description
         };
 
         const { data, error } = await supabase.from('coupons').insert(couponData);
 
         if (error) throw error;
 
-        res.status(201).json({
+        res.status(200).json({
+            statusCode: 200,
             message: 'Coupon created successfully',
-            coupon: data
+            data: data,
+            error: null
         });
     } catch (error) {
         console.error('Coupon creation error:', error);
-        res.status(500).json({ message: 'Error creating coupon', error: error.message });
+        res.status(500).json({
+            statusCode: 500,
+            message: 'Error creating coupon',
+            error: error.message,
+            data: null
+        });
     }
 });
 
@@ -96,9 +117,19 @@ app.get('/admin/api/coupons/getAllCoupons', authenticateAdmin, async (req, res) 
 
         if (error) throw error;
 
-        res.status(200).json(data);
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Coupons fetched successfully',
+            data: data,
+            error: null
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Error fetching coupons', error: error.message });
+        res.status(500).json({
+            statusCode: 500,
+            message: 'Error fetching coupons',
+            error: error.message,
+            data: null
+        });
     }
 });
 
@@ -111,9 +142,19 @@ app.get('/admin/api/coupons/getCouponById/:id', authenticateAdmin, async (req, r
 
         if (error) throw error;
 
-        res.status(200).json(data);
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Coupon fetched successfully',
+            data: data,
+            error: null
+        });
     } catch (error) {
-        res.status(404).json({ message: 'Coupon not found', error: error.message });
+        res.status(404).json({
+            statusCode: 404,
+            message: 'Coupon not found',
+            error: error.message,
+            data: null
+        });
     }
 });
 
@@ -128,15 +169,22 @@ app.put('/admin/api/coupons/update/:id', authenticateAdmin, async (req, res) => 
         if (error) throw error;
 
         res.status(200).json({
+            statusCode: 200,
             message: 'Coupon updated successfully',
-            coupon: data
+            data: data,
+            error: null
         });
     } catch (error) {
-        res.status(500).json({ message: 'Error updating coupon', error: error.message });
+        res.status(500).json({
+            statusCode: 500,
+            message: 'Error updating coupon',
+            error: error.message,
+            data: null
+        });
     }
 });
 
-// Delete a Coupon
+// Hard Delete a Coupon
 app.delete('/admin/api/coupons/hard-delete/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
@@ -145,19 +193,27 @@ app.delete('/admin/api/coupons/hard-delete/:id', authenticateAdmin, async (req, 
 
         if (error) throw error;
 
-        res.status(200).json({ message: 'Coupon deleted successfully' });
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Coupon deleted successfully',
+            error: null,
+            data: null
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Error deleting coupon', error: error.message });
+        res.status(500).json({
+            statusCode: 500,
+            message: 'Error deleting coupon',
+            error: error.message,
+            data: null
+        });
     }
 });
-
 
 // Soft Delete a Coupon
 app.delete('/admin/api/coupons/soft-delete/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Update the is_deleted and deleted_at fields
         const { data, error } = await supabase
             .from('coupons')
             .update({
@@ -169,15 +225,29 @@ app.delete('/admin/api/coupons/soft-delete/:id', authenticateAdmin, async (req, 
         if (error) throw error;
 
         if (data && data.length === 0) {
-            return res.status(404).json({ message: 'Coupon not found or already deleted' });
+            return res.status(404).json({
+                statusCode: 404,
+                message: 'Coupon not found or already deleted',
+                error: 'Not Found',
+                data: null
+            });
         }
 
-        res.status(200).json({ message: 'Coupon soft-deleted successfully' });
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Coupon soft-deleted successfully',
+            error: null,
+            data: null
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Error soft-deleting coupon', error: error.message });
+        res.status(500).json({
+            statusCode: 500,
+            message: 'Error soft-deleting coupon',
+            error: error.message,
+            data: null
+        });
     }
 });
-
 
 // Start the server
 app.listen(PORT, () => {
