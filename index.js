@@ -3,9 +3,12 @@ const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
+const cors = require('cors');
 
 // Load environment variables from .env file
 dotenv.config();
+
+
 
 // Initialize Express app
 const app = express();
@@ -14,6 +17,15 @@ const PORT = process.env.PORT || 3000;
 // Middleware for parsing JSON requests
 app.use(express.json());
 app.use(bodyParser.json());
+// Enable CORS for all origins
+app.use(cors());
+
+// OR, for more fine-grained control:
+// app.use(cors({
+//     origin: '*', // Allows all origins
+//     methods: 'GET,POST,PUT,DELETE,OPTIONS',
+//     allowedHeaders: 'Content-Type,Authorization'
+// }));
 
 // Initialize Supabase client using environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -60,7 +72,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // Admin Login Route
-app.post('/admin/login', async (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
     const { email, password } = req.body;
     
     try {
@@ -75,7 +87,7 @@ app.post('/admin/login', async (req, res) => {
 
         if (error || !data) {
             return res.status(401).json({
-                statusCode: 401,
+                status: 401,
                 message: 'Access Denied, Admin Email not found',
                 error: 'Unauthorized'
             });
@@ -86,7 +98,7 @@ app.post('/admin/login', async (req, res) => {
         // Check if password matches (you should hash and compare passwords securely in production)
         if (data.password !== password) {
             return res.status(401).json({
-                statusCode: 401,
+                status: 401,
                 message: 'Invalid Credentials , password does not match',
                 error: 'Unauthorized'
             });
@@ -103,14 +115,14 @@ app.post('/admin/login', async (req, res) => {
         const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Login successful',
             email: data.email,
             accessToken
         });
     } catch (err) {
         res.status(500).json({
-            statusCode: 500,
+            status: 500,
             message: 'Internal server error',
             error: err.message
         });
@@ -118,7 +130,7 @@ app.post('/admin/login', async (req, res) => {
 });
 
 // Create a Coupon
-app.post('/admin/api/coupons/createCoupon',authenticateAdmin, async (req, res) => {
+app.post('/api/admin/coupons/createCoupon',authenticateAdmin, async (req, res) => {
     const {
         code,
         offer_name,
@@ -153,7 +165,7 @@ app.post('/admin/api/coupons/createCoupon',authenticateAdmin, async (req, res) =
         if (error) throw error;
 
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Coupon created successfully',
             data: data,
             error: null
@@ -161,7 +173,7 @@ app.post('/admin/api/coupons/createCoupon',authenticateAdmin, async (req, res) =
     } catch (error) {
         console.error('Coupon creation error:', error);
         res.status(500).json({
-            statusCode: 500,
+            status: 500,
             message: 'Error creating coupon',
             error: error.message,
             data: null
@@ -170,21 +182,23 @@ app.post('/admin/api/coupons/createCoupon',authenticateAdmin, async (req, res) =
 });
 
 // Get All Coupons
-app.get('/admin/api/coupons/getAllCoupons',authenticateAdmin, async (req, res) => {
+app.get('/api/admin/coupons/getAllCoupons',authenticateAdmin, async (req, res) => {
     try {
         const { data, error } = await supabase.from('coupons').select('*');
 
         if (error) throw error;
 
+        console.log('Coupons:', data);
+
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Coupons fetched successfully',
             data: data,
             error: null
         });
     } catch (error) {
         res.status(500).json({
-            statusCode: 500,
+            status: 500,
             message: 'Error fetching coupons',
             error: error.message,
             data: null
@@ -193,7 +207,7 @@ app.get('/admin/api/coupons/getAllCoupons',authenticateAdmin, async (req, res) =
 });
 
 // Get a Single Coupon
-app.get('/admin/api/coupons/getCouponById/:id',authenticateAdmin, async (req, res) => {
+app.get('/api/admin/coupons/getCouponById/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -202,14 +216,14 @@ app.get('/admin/api/coupons/getCouponById/:id',authenticateAdmin, async (req, re
         if (error) throw error;
 
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Coupon fetched successfully',
             data: data,
             error: null
         });
     } catch (error) {
         res.status(404).json({
-            statusCode: 404,
+            status: 404,
             message: 'Coupon not found',
             error: error.message,
             data: null
@@ -218,7 +232,7 @@ app.get('/admin/api/coupons/getCouponById/:id',authenticateAdmin, async (req, re
 });
 
 // Update a Coupon
-app.put('/admin/api/coupons/update/:id',authenticateAdmin, async (req, res) => {
+app.put('/api/admin/coupons/update/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
     const updates = { ...req.body };
 
@@ -247,14 +261,14 @@ app.put('/admin/api/coupons/update/:id',authenticateAdmin, async (req, res) => {
         if (error) throw error;
 
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Coupon updated successfully',
             data: data,
             error: null
         });
     } catch (error) {
         res.status(500).json({
-            statusCode: 500,
+            status: 500,
             message: 'Error updating coupon',
             error: error.message,
             data: null
@@ -263,7 +277,7 @@ app.put('/admin/api/coupons/update/:id',authenticateAdmin, async (req, res) => {
 });
 
 // Hard Delete a Coupon
-app.delete('/admin/api/coupons/delete/:id',authenticateAdmin, async (req, res) => {
+app.delete('/api/admin/coupons/delete/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -272,14 +286,14 @@ app.delete('/admin/api/coupons/delete/:id',authenticateAdmin, async (req, res) =
         if (error) throw error;
 
         res.status(200).json({
-            statusCode: 200,
+            status: 200,
             message: 'Coupon deleted successfully',
             error: null,
             data: null
         });
     } catch (error) {
         res.status(500).json({
-            statusCode: 500,
+            status: 500,
             message: 'Error deleting coupon',
             error: error.message,
             data: null
