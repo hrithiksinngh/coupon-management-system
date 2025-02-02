@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -17,49 +18,107 @@ app.use(bodyParser.json());
 // Initialize Supabase client using environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+const JWT_SECRET = process.env.JWT_SECRET;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Admin authentication middleware
-const authenticateAdmin = async (req, res, next) => {
-    const adminEmail = req.headers.emailid;
+// Function to verify token
+const verifyToken = (token) => {
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        return { valid: true, expired: false, decoded };
+    } catch (err) {
+        return { valid: false, expired: err.name === 'TokenExpiredError', decoded: null };
+    }
+};
 
-    if (!adminEmail) {
+// Middleware to authenticate admin
+const authenticateAdmin = (req, res, next) => {
+    const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <token>"
+
+    if (!token) {
+        return res.status(401).json({ message: "Access Denied: No Token Provided" });
+    }
+
+    const result = verifyToken(token);
+
+    if (!result.valid) {
         return res.status(401).json({
-            statusCode: 401,
-            message: 'Access Denied',
-            error: 'Unauthorized'
+            message: result.expired ? "Token Expired. Please log in again." : "Invalid Token"
         });
     }
 
+    console.log("Decoded Token:", result.decoded);
+
+    if (!result.decoded.adminId || !result.decoded.adminEmail) {
+        return res.status(401).json({
+            message: "Invalid Token: Missing required fields"
+        });
+    }
+
+    req.admin = result.decoded; // Attach decoded data to request
+    next();
+};
+
+// Admin Login Route
+app.post('/admin/login', async (req, res) => {
+    const { email, password } = req.body;
+    
     try {
+        // Fetch admin details
         const { data, error } = await supabase
             .from('admin')
-            .select('email')
-            .eq('email', adminEmail)
+            .select('id, email,password')
+            .eq('email', email)
             .single();
+
+
 
         if (error || !data) {
             return res.status(401).json({
                 statusCode: 401,
-                message: 'Access Denied',
+                message: 'Access Denied, Admin Email not found',
                 error: 'Unauthorized'
             });
         }
 
-        next();
-    } catch (error) {
-        return res.status(500).json({
+        console.log('Admin Data:', data);
+
+        // Check if password matches (you should hash and compare passwords securely in production)
+        if (data.password !== password) {
+            return res.status(401).json({
+                statusCode: 401,
+                message: 'Invalid Credentials , password does not match',
+                error: 'Unauthorized'
+            });
+        }
+
+        // Create token payload
+        const payload = {
+            adminId: data.id,
+            adminEmail: data.email,
+            isAdmin: true
+        };
+
+        // Generate JWT token
+        const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Login successful',
+            email: data.email,
+            accessToken
+        });
+    } catch (err) {
+        res.status(500).json({
             statusCode: 500,
-            message: 'Error checking admin authorization',
-            error: error.message
+            message: 'Internal server error',
+            error: err.message
         });
     }
-};
-
-// CRUD APIs for Coupons
+});
 
 // Create a Coupon
-app.post('/admin/api/coupons/createCoupon', authenticateAdmin, async (req, res) => {
+app.post('/admin/api/coupons/createCoupon',authenticateAdmin, async (req, res) => {
     const {
         code,
         offer_name,
@@ -111,7 +170,7 @@ app.post('/admin/api/coupons/createCoupon', authenticateAdmin, async (req, res) 
 });
 
 // Get All Coupons
-app.get('/admin/api/coupons/getAllCoupons', authenticateAdmin, async (req, res) => {
+app.get('/admin/api/coupons/getAllCoupons',authenticateAdmin, async (req, res) => {
     try {
         const { data, error } = await supabase.from('coupons').select('*');
 
@@ -134,7 +193,7 @@ app.get('/admin/api/coupons/getAllCoupons', authenticateAdmin, async (req, res) 
 });
 
 // Get a Single Coupon
-app.get('/admin/api/coupons/getCouponById/:id', authenticateAdmin, async (req, res) => {
+app.get('/admin/api/coupons/getCouponById/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -159,7 +218,7 @@ app.get('/admin/api/coupons/getCouponById/:id', authenticateAdmin, async (req, r
 });
 
 // Update a Coupon
-app.put('/admin/api/coupons/update/:id', authenticateAdmin, async (req, res) => {
+app.put('/admin/api/coupons/update/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
     const updates = { ...req.body };
 
@@ -204,7 +263,7 @@ app.put('/admin/api/coupons/update/:id', authenticateAdmin, async (req, res) => 
 });
 
 // Hard Delete a Coupon
-app.delete('/admin/api/coupons/hard-delete/:id', authenticateAdmin, async (req, res) => {
+app.delete('/admin/api/coupons/delete/:id',authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -228,45 +287,6 @@ app.delete('/admin/api/coupons/hard-delete/:id', authenticateAdmin, async (req, 
     }
 });
 
-// Soft Delete a Coupon
-app.delete('/admin/api/coupons/soft-delete/:id', authenticateAdmin, async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const { data, error } = await supabase
-            .from('coupons')
-            .update({
-                is_deleted: true,
-                deleted_at: new Date().toISOString()
-            })
-            .eq('id', id);
-
-        if (error) throw error;
-
-        if (data && data.length === 0) {
-            return res.status(404).json({
-                statusCode: 404,
-                message: 'Coupon not found or already deleted',
-                error: 'Not Found',
-                data: null
-            });
-        }
-
-        res.status(200).json({
-            statusCode: 200,
-            message: 'Coupon soft-deleted successfully',
-            error: null,
-            data: null
-        });
-    } catch (error) {
-        res.status(500).json({
-            statusCode: 500,
-            message: 'Error soft-deleting coupon',
-            error: error.message,
-            data: null
-        });
-    }
-});
 
 // Start the server
 app.listen(PORT, () => {
