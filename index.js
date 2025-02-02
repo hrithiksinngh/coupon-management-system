@@ -130,7 +130,7 @@ app.post('/api/admin/login', async (req, res) => {
 });
 
 // Create a Coupon
-app.post('/api/admin/coupons/createCoupon',authenticateAdmin, async (req, res) => {
+app.post('/api/admin/coupons/createCoupon', authenticateAdmin, async (req, res) => {
     const {
         code,
         offer_name,
@@ -145,6 +145,29 @@ app.post('/api/admin/coupons/createCoupon',authenticateAdmin, async (req, res) =
     } = req.body;
 
     try {
+        // Check if coupon code already exists and is active
+        const { data: existingCoupon, error: checkError } = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('code', code)
+            .eq('is_deleted', false)
+            .single();
+
+        if (existingCoupon) {
+            // Check if existing coupon is still active
+            const currentDate = new Date().getTime();
+            const couponEndDate = new Date(existingCoupon.end_date).getTime();
+            
+            if (currentDate <= couponEndDate) {
+                return res.status(400).json({
+                    status: 400,
+                    message: 'Coupon code already exists and is active',
+                    error: 'Duplicate coupon code',
+                    data: null
+                });
+            }
+        }
+
         // Convert empty strings to null or appropriate default values
         const couponData = {
             code,
@@ -153,7 +176,6 @@ app.post('/api/admin/coupons/createCoupon',authenticateAdmin, async (req, res) =
             discount_value: Number(discount_value),
             max_usage: max_usage === '' ? null : Number(max_usage),
             max_usage_per_user: max_usage_per_user === '' ? null : Number(max_usage_per_user),
-            // Convert milliseconds timestamp to proper date format
             start_date: new Date(parseInt(start_date)).toISOString(),
             end_date: new Date(parseInt(end_date)).toISOString(),
             terms_url: terms_url,
@@ -335,6 +357,157 @@ app.delete('/api/admin/coupons/soft-delete/:id', authenticateAdmin, async (req, 
         res.status(500).json({
             status: 500,
             message: 'Error soft-deleting coupon',
+            error: error.message,
+            data: null
+        });
+    }
+});
+
+// Validate Coupon
+app.post('/api/coupons/validate', async (req, res) => {
+    const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <token>"
+
+    if (!token) {
+        return res.status(401).json({
+            status: 401,
+            message: "Access Denied: No Token Provided",
+            error: "Unauthorized",
+            data: null
+        });
+    }
+
+    const result = verifyToken(token);
+
+    // TODO: uncomment this after integration of user table
+
+    // if (!result.valid) {
+    //     return res.status(401).json({
+    //         status: 401,
+    //         message: result.expired ? "Token Expired. Please log in again." : "Invalid Token",
+    //         error: "Unauthorized",
+    //         data: null
+    //     });
+    // }
+
+    const { coupon_code } = req.body;
+    // const email = result.decoded.email; // Keep this line to get email from token
+    const email = req.headers.email;
+
+    if (!coupon_code) {
+        return res.status(400).json({
+            status: 400,
+            message: 'Coupon code is required',
+            error: 'Bad Request',
+            data: null
+        });
+    }
+
+    try {
+        // First check if coupon exists and is valid
+        const { data: couponData, error: couponError } = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('code', coupon_code)
+            .eq('is_deleted', false)
+            .single();
+
+        if (couponError || !couponData) {
+            return res.status(404).json({
+                status: 404,
+                message: 'Invalid coupon code',
+                error: 'Coupon not found',
+                data: null
+            });
+        }
+
+        // Check if coupon is expired
+        const currentDate = new Date().getTime();
+        const startDate = new Date(couponData.start_date).getTime();
+        const endDate = new Date(couponData.end_date).getTime();
+
+        if (currentDate < startDate || currentDate > endDate) {
+            return res.status(400).json({
+                status: 400,
+                message: 'Coupon has expired',
+                error: 'Invalid date range',
+                data: null
+            });
+        }
+
+        // Check if user exists
+        try {
+            console.log('Attempting to find user with email:', email);
+            
+            const { data: userData, error: userError } = await supabase
+                .from('user')
+                .select('email, coupon_codes_used, is_coupon_report_free')
+                .eq('email', email.toLowerCase())
+                .single();
+
+            console.log('Query result:', { userData, userError });
+
+            if (userError || !userData) {
+                return res.status(404).json({
+                    status: 404,
+                    message: 'User not found',
+                    error: 'Invalid email',
+                    data: null
+                });
+            }
+
+            // Check if it's a REPORT type coupon and if user has already used their free report
+            if (couponData.discount_type === 'REPORT' && !userData.is_coupon_report_free) {
+                return res.status(400).json({
+                    status: 400,
+                    message: 'Free report coupon already used',
+                    error: 'Coupon not applicable',
+                    data: null
+                });
+            }
+
+            // Check if user has already used this coupon
+            const usedCoupons = userData.coupon_codes_used ? userData.coupon_codes_used.split(',') : [];
+            
+            // Count how many times this user has used this coupon
+            const userCouponUsageCount = usedCoupons.filter(code => code === coupon_code).length;
+            
+            // Check if user has exceeded their per-user limit
+            if (couponData.max_usage_per_user !== null && userCouponUsageCount >= couponData.max_usage_per_user) {
+                return res.status(400).json({
+                    status: 400,
+                    message: 'Maximum usage limit per user exceeded for this coupon',
+                    error: 'Coupon not applicable',
+                    data: null
+                });
+            }
+
+            // If all validations pass, return coupon details
+            res.status(200).json({
+                status: 200,
+                message: 'Coupon is valid',
+                error: null,
+                data: {
+                    discount_type: couponData.discount_type,
+                    discount_value: couponData.discount_value,
+                    coupon_description: couponData.coupon_description
+                }
+            });
+
+        } catch (error) {
+            console.error('Coupon validation error:', error);
+            res.status(500).json({
+                status: 500,
+                message: 'Error validating coupon',
+                error: error.message,
+                data: null
+            });
+        }
+
+    } catch (error) {
+        console.error('Coupon validation error:', error);
+        res.status(500).json({
+            status: 500,
+            message: 'Error validating coupon',
             error: error.message,
             data: null
         });
