@@ -514,8 +514,167 @@ app.post('/api/coupons/validate', async (req, res) => {
     }
 });
 
+// Log Coupon Usage
+app.post('/api/coupons/log-usage', async (req, res) => {
+    const { 
+        discount_applied,
+        user_email,
+        coupon_id,
+        transaction_status
+    } = req.body;
 
+    try {
+        // Validate required fields
+        if (!discount_applied || !user_email || !coupon_id || !transaction_status) {
+            return res.status(400).json({
+                status: 400,
+                message: 'Missing required fields',
+                error: 'Bad Request',
+                data: null
+            });
+        }
 
+        // First get coupon details to check type
+        const { data: couponData, error: couponError } = await supabase
+            .from('coupons')
+            .select('code, discount_type')
+            .eq('id', coupon_id)
+            .single();
+
+        if (couponError || !couponData) {
+            return res.status(404).json({
+                status: 404,
+                message: 'Coupon not found',
+                error: 'Invalid coupon ID',
+                data: null
+            });
+        }
+
+        // Start a transaction
+        const { data: userData, error: userError } = await supabase
+            .from('user')
+            .select('coupon_codes_used')
+            .eq('email', user_email.toLowerCase())
+            .single();
+
+        if (userError || !userData) {
+            return res.status(404).json({
+                status: 404,
+                message: 'User not found',
+                error: 'Invalid email',
+                data: null
+            });
+        }
+
+        // Create usage log
+        const { error: usageError } = await supabase
+            .from('coupon_usages')
+            .insert({
+                discount_applied,
+                user_email: user_email.toLowerCase(),
+                coupon_id,
+                applied_at: new Date().toISOString(),
+                transaction_status
+            });
+
+        if (usageError) throw usageError;
+
+        // Update user's coupon usage
+        const currentCoupons = userData.coupon_codes_used || '';
+        const updatedCoupons = currentCoupons 
+            ? `${currentCoupons},${couponData.code}`
+            : couponData.code;
+
+        const updates = {
+            coupon_codes_used: updatedCoupons
+        };
+
+        // If it's a REPORT type coupon, update is_coupon_report_free
+        if (couponData.discount_type === 'REPORT') {
+            updates.is_coupon_report_free = false;
+        }
+
+        const { error: updateError } = await supabase
+            .from('user')
+            .update(updates)
+            .eq('email', user_email.toLowerCase());
+
+        if (updateError) throw updateError;
+
+        res.status(200).json({
+            status: 200,
+            message: 'Coupon usage logged successfully',
+            error: null,
+            data: {
+                coupon_code: couponData.code,
+                user_email,
+                transaction_status
+            }
+        });
+
+    } catch (error) {
+        console.error('Error logging coupon usage:', error);
+        res.status(500).json({
+            status: 500,
+            message: 'Error logging coupon usage',
+            error: error.message,
+            data: null
+        });
+    }
+});
+
+// Fetch Coupon Usage Logs
+app.get('/api/admin/coupons/logs', authenticateAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('coupon_usages')
+            .select(`
+                id,
+                discount_applied,
+                user_email,
+                applied_at,
+                transaction_status,
+                coupons (
+                    code,
+                    coupon_description,
+                    discount_type,
+                    discount_value
+                )
+            `)
+            .order('applied_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Format the response data
+        const formattedLogs = data.map(log => ({
+            id: log.id,
+            coupon_code: log.coupons.code,
+            coupon_description: log.coupons.coupon_description,
+            discount_type: log.coupons.discount_type,
+            discount_value: log.coupons.discount_value,
+            discount_applied: log.discount_applied,
+            user_email: log.user_email,
+            applied_at: log.applied_at,
+            transaction_status: log.transaction_status
+        }));
+
+        res.status(200).json({
+            status: 200,
+            message: 'Coupon logs fetched successfully',
+            error: null,
+            data: formattedLogs
+        });
+
+    } catch (error) {
+        console.error('Error fetching coupon logs:', error);
+        res.status(500).json({
+            status: 500,
+            message: 'Error fetching coupon logs',
+            error: error.message,
+            data: null
+        });
+    }
+});
 
 // Start the server
 app.listen(PORT, () => {
