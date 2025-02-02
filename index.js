@@ -277,7 +277,7 @@ app.put('/api/admin/coupons/update/:id',authenticateAdmin, async (req, res) => {
 });
 
 // Hard Delete a Coupon
-app.delete('/api/admin/coupons/delete/:id',authenticateAdmin, async (req, res) => {
+app.delete('/api/admin/coupons/hard-delete/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -300,6 +300,48 @@ app.delete('/api/admin/coupons/delete/:id',authenticateAdmin, async (req, res) =
         });
     }
 });
+
+// Soft Delete a Coupon
+app.delete('/api/admin/coupons/soft-delete/:id', authenticateAdmin, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const { data, error } = await supabase
+            .from('coupons')
+            .update({
+                is_deleted: true,
+                deleted_at: new Date().toISOString()
+            })
+            .eq('id', id);
+
+        if (error) throw error;
+
+        if (data && data.length === 0) {
+            return res.status(404).json({
+                status: 404,
+                message: 'Coupon not found or already deleted',
+                error: 'Not Found',
+                data: null
+            });
+        }
+
+        res.status(200).json({
+            status: 200,
+            message: 'Coupon soft-deleted successfully',
+            error: null,
+            data: null
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 500,
+            message: 'Error soft-deleting coupon',
+            error: error.message,
+            data: null
+        });
+    }
+});
+
+
 
 
 // Start the server
