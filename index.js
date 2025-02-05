@@ -136,11 +136,8 @@ app.post("/api/admin/login", async (req, res) => {
   });
 
   // Create a Coupon
-  app.post(
-    "/api/admin/coupons/createCoupon",
-    authenticateAdmin,
-    async (req, res) => {
-      const {
+  app.post("/api/admin/coupons/createCoupon", authenticateAdmin, async (req, res) => {
+    const {
         code,
         offer_name,
         discount_type,
@@ -151,70 +148,67 @@ app.post("/api/admin/login", async (req, res) => {
         end_date,
         terms_url,
         coupon_description,
-      } = req.body;
+    } = req.body;
 
-      try {
-        // Check if coupon code already exists and is active
+    try {
+        // Check if coupon code already exists (including deleted ones)
         const { data: existingCoupon, error: checkError } = await supabase
-          .from("coupons")
-          .select("*")
-          .eq("code", code)
-          .eq("is_deleted", false)
-          .single();
+            .from("coupons")
+            .select("*")
+            .eq("code", code)
+            .single();
 
         if (existingCoupon) {
-          // Check if existing coupon is still active
-          const currentDate = new Date().getTime();
-          const couponEndDate = new Date(existingCoupon.end_date).getTime();
-
-          if (currentDate <= couponEndDate) {
-            return res.status(400).json({
-              status: 400,
-              message: "Coupon code already exists and is active",
-              error: "Duplicate coupon code",
-              data: null,
-            });
-          }
+            const currentDate = new Date().getTime();
+            const couponEndDate = new Date(existingCoupon.end_date).getTime();
+            
+            // Consider coupon as duplicate if:
+            // 1. It's not deleted AND
+            // 2. It hasn't expired
+            if (!existingCoupon.is_deleted && currentDate <= couponEndDate) {
+                return res.status(400).json({
+                    status: 400,
+                    message: "Coupon code already exists and is active",
+                    error: "Duplicate coupon code",
+                    data: null,
+                });
+            }
         }
 
-        // Convert empty strings to null or appropriate default values
+        // Rest of your existing create coupon code...
         const couponData = {
-          code,
-          offer_name,
-          discount_type,
-          discount_value: Number(discount_value),
-          max_usage: max_usage === "" ? null : Number(max_usage),
-          max_usage_per_user:
-            max_usage_per_user === "" ? null : Number(max_usage_per_user),
-          start_date: new Date(parseInt(start_date)).toISOString(),
-          end_date: new Date(parseInt(end_date)).toISOString(),
-          terms_url: terms_url,
-          coupon_description: coupon_description,
+            code,
+            offer_name,
+            discount_type,
+            discount_value: Number(discount_value),
+            max_usage: max_usage === "" ? null : Number(max_usage),
+            max_usage_per_user: max_usage_per_user === "" ? null : Number(max_usage_per_user),
+            start_date: new Date(parseInt(start_date)).toISOString(),
+            end_date: new Date(parseInt(end_date)).toISOString(),
+            terms_url: terms_url,
+            coupon_description: coupon_description,
         };
 
-        const { data, error } = await supabase
-          .from("coupons")
-          .insert(couponData);
+        const { data, error } = await supabase.from("coupons").insert(couponData);
 
         if (error) throw error;
 
         res.status(200).json({
-          status: 200,
-          message: "Coupon created successfully",
-          data: data,
-          error: null,
+            status: 200,
+            message: "Coupon created successfully",
+            data: data,
+            error: null,
         });
-      } catch (error) {
+    } catch (error) {
         console.error("Coupon creation error:", error);
         res.status(500).json({
-          status: 500,
-          message: "Error creating coupon",
-          error: error.message,
-          data: null,
+            status: 500,
+            message: "Error creating coupon",
+            error: error.message,
+            data: null,
         });
-      }
     }
-  );
+  });
 
   // Get All Coupons
   app.get("/api/admin/coupons/getAllCoupons", authenticateAdmin, async (req, res) => {
