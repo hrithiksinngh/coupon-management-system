@@ -467,7 +467,7 @@ app.post("/api/admin/login", async (req, res) => {
         });
       }
 
-      // Check if coupon is expired
+      // Check if coupon is expired by date
       const currentDate = new Date().getTime();
       const startDate = new Date(couponData.start_date).getTime();
       const endDate = new Date(couponData.end_date).getTime();
@@ -479,6 +479,16 @@ app.post("/api/admin/login", async (req, res) => {
           error: "Invalid date range",
           data: null,
         });
+      }
+
+      // Check if coupon has reached its maximum usage limit
+      if (couponData.max_usage && couponData.max_usage_count >= couponData.max_usage) {
+          return res.status(400).json({
+            status: 400,
+            message: "Coupon has reached maximum usage limit",
+            error: "Coupon expired",
+            data: null,
+          });
       }
 
       // Check if user exists
