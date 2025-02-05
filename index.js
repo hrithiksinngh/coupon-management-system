@@ -217,33 +217,32 @@ app.post("/api/admin/login", async (req, res) => {
   );
 
   // Get All Coupons
-  app.get(
-    "/api/admin/coupons/getAllCoupons",
-    authenticateAdmin,
-    async (req, res) => {
-      try {
-        const { data, error } = await supabase.from("coupons").select("*");
+  app.get("/api/admin/coupons/getAllCoupons", authenticateAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from("coupons")
+            .select("*")
+            .order('created_at', { ascending: false }); // Sort by created_at in descending order
 
         if (error) throw error;
 
         console.log("Coupons:", data);
 
         res.status(200).json({
-          status: 200,
-          message: "Coupons fetched successfully",
-          data: data,
-          error: null,
+            status: 200,
+            message: "Coupons fetched successfully",
+            data: data,
+            error: null,
         });
-      } catch (error) {
+    } catch (error) {
         res.status(500).json({
-          status: 500,
-          message: "Error fetching coupons",
-          error: error.message,
-          data: null,
+            status: 500,
+            message: "Error fetching coupons",
+            error: error.message,
+            data: null,
         });
-      }
     }
-  );
+  });
 
   // Get a Single Coupon
   app.get(
