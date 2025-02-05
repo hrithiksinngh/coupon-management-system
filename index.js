@@ -213,18 +213,21 @@ app.post("/api/admin/login", async (req, res) => {
   // Get All Coupons
   app.get("/api/admin/coupons/getAllCoupons", authenticateAdmin, async (req, res) => {
     try {
+        const currentDate = new Date().toISOString();
+
         const { data, error } = await supabase
             .from("coupons")
             .select("*")
-            .order('created_at', { ascending: false }); // Sort by created_at in descending order
+            .eq('is_deleted', false)  // Not deleted
+            .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        console.log("Coupons:", data);
+        console.log("Active Coupons:", data);
 
         res.status(200).json({
             status: 200,
-            message: "Coupons fetched successfully",
+            message: "Active coupons fetched successfully",
             data: data,
             error: null,
         });
