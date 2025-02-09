@@ -4,6 +4,9 @@ const { createClient } = require('@supabase/supabase-js');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -756,6 +759,155 @@ app.post("/api/admin/login", async (req, res) => {
       });
     }
   });
+
+// Configure multer for file upload
+const upload = multer({ 
+    dest: 'uploads/',
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== 'text/csv') {
+            return cb(new Error('Only CSV files are allowed'));
+        }
+        cb(null, true);
+    }
+});
+
+// Bulk Create Coupons from CSV
+app.post('/api/admin/coupons/bulk-create', authenticateAdmin, upload.single('file'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({
+            status: 400,
+            message: 'No file uploaded',
+            error: 'Bad Request',
+            data: null
+        });
+    }
+
+    const results = [];
+    const errors = [];
+
+    try {
+        // First, get all existing coupon codes
+        const { data: allExistingCoupons, error: fetchError } = await supabase
+            .from('coupons')
+            .select('code, end_date, is_deleted')
+            .eq('is_deleted', false); // Only get non-deleted coupons
+
+        if (fetchError) throw fetchError;
+
+        console.log('Existing coupons:', allExistingCoupons);
+
+        // Create a map of active coupons
+        const activeCoupons = new Set();
+        const currentDate = new Date();
+
+        allExistingCoupons?.forEach(existing => {
+            const couponEndDate = new Date(existing.end_date);
+            if (couponEndDate >= currentDate) {
+                activeCoupons.add(existing.code.toUpperCase()); // Store uppercase for case-insensitive comparison
+            }
+        });
+
+        console.log('Active coupon codes:', Array.from(activeCoupons));
+
+        // Read and parse CSV
+        await new Promise((resolve, reject) => {
+            fs.createReadStream(req.file.path)
+                .pipe(csv())
+                .on('data', (data) => results.push(data))
+                .on('end', resolve)
+                .on('error', reject);
+        });
+
+        // Process each coupon
+        const createdCoupons = [];
+        for (const coupon of results) {
+            try {
+                // Validate required fields
+                if (!coupon.code || !coupon.offer_name || !coupon.discount_type || !coupon.discount_value) {
+                    errors.push({
+                        code: coupon.code || 'Unknown',
+                        error: 'Missing required fields'
+                    });
+                    continue;
+                }
+
+                const upperCaseCode = coupon.code.toUpperCase();
+                console.log('Checking coupon code:', upperCaseCode);
+
+                // Check if coupon code is active
+                if (activeCoupons.has(upperCaseCode)) {
+                    console.log('Found duplicate coupon:', upperCaseCode);
+                    errors.push({
+                        code: coupon.code,
+                        error: 'Coupon code already exists and is active'
+                    });
+                    continue;
+                }
+
+                // Add to active coupons set to prevent duplicates within the CSV
+                activeCoupons.add(upperCaseCode);
+
+                // Prepare coupon data
+                const couponData = {
+                    code: coupon.code,
+                    offer_name: coupon.offer_name,
+                    discount_type: coupon.discount_type.toUpperCase(),
+                    discount_value: Number(coupon.discount_value),
+                    max_usage: coupon.max_usage ? Number(coupon.max_usage) : null,
+                    max_usage_per_user: coupon.max_usage_per_user ? Number(coupon.max_usage_per_user) : null,
+                    start_date: new Date(coupon.start_date).toISOString(),
+                    end_date: new Date(coupon.end_date).toISOString(),
+                    terms_url: coupon.terms_url || null,
+                    coupon_description: coupon.coupon_description,
+                    is_deleted: false
+                };
+
+                // Create coupon
+                const { data, error } = await supabase
+                    .from('coupons')
+                    .insert(couponData);
+
+                if (error) throw error;
+
+                createdCoupons.push(couponData.code);
+
+            } catch (error) {
+                errors.push({
+                    code: coupon.code || 'Unknown',
+                    error: error.message
+                });
+            }
+        }
+
+        // Clean up uploaded file
+        fs.unlinkSync(req.file.path);
+
+        res.status(200).json({
+            status: 200,
+            message: 'Bulk coupon creation completed',
+            data: {
+                created: createdCoupons.length,
+                createdCoupons: createdCoupons,
+                failed: errors.length,
+                errors: errors
+            },
+            error: null
+        });
+
+    } catch (error) {
+        // Clean up uploaded file in case of error
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        res.status(500).json({
+            status: 500,
+            message: 'Error processing CSV file',
+            error: error.message,
+            data: null
+        });
+    }
+});
 
 // Start the server
 app.listen(PORT, () => {
